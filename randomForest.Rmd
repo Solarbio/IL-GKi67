@@ -1,0 +1,189 @@
+---
+title: "randomForest"
+author: "Haiyu Gong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# 随机森林
+
+[随机生存森林](https://mp.weixin.qq.com/s?__biz=Mzg3ODg5MzU5NA==&mid=2247485474&idx=1&sn=64542e647a79fb0dc05d119c17bbe38d&chksm=cf0d8757f87a0e41fb0cf11457426e86cbebcb20541e1285fb200275072b48e97dda09f97d53&token=1559840249&lang=zh_CN#rd)
+
+## 1、加载R包和数据集
+
+```{r}
+library(randomForestSRC)
+library(survival)
+library(survminer)
+library("readxl")
+library(ggplot2)
+```
+```{}
+path <- "C:\\Users\\GongHaiyu\\OneDrive\\病理\\tableData\\resultTable_0510f1v3.xlsx"
+data1 <- read_excel(path, sheet = "FUSCC")
+data2 <- read_excel(path, sheet = "Training")
+data3 <- read_excel(path, sheet = "InternalValid")
+data4 <- read_excel(path, sheet = "External2")
+```
+```{r}
+indices <- c( 'MH_new', 'auto_ki67', 'manual_ki67', 
+       'ki67_max', 'ki67_min', 'ki67_mean', 'ki67_std',
+       'ki67_cv', 'ki67_range', 'ki67_median', 'ki67_SquMean', 'ki67_Skewness',
+       'ki67_kurt', 'ki67_IQR', 'ki67_QCD', 
+       'entropy_max', 'entropy_min', 'entropy_mean', 'entropy_std', 
+       'entropy_cv', 'entropy_range', 'entropy_median', 'entropy_SquMean', 'entropy_Skewness', 
+       'entropy_kurt', 'entropy_IQR', 'entropy_QCD'
+        ,'pct_HH', 'pct_sig', 'pct_Gsig'
+       #, 'risk_score', 'risk_score_gd', 'risk_score_lasso', 'risk_score_ridge', 'risk_score_mlp'
+       )
+
+data1 <- data1[data1$OS_months > 0, ]
+data2 <- data2[data2$OS_months > 0, ]
+data3 <- data3[data3$OS_months > 0, ]
+data4 <- data4[data4$OS_months > 0, ]
+```
+
+## 2、构建随机生存森林模型
+
+```{r}
+
+rfsrc_fit <- rfsrc(
+                   Surv(OS_months, OS_status) ~ 
+                   #MH_new + auto_ki67 + manual_ki67 + ki67_max + ki67_mean + ki67_std + ki67_median + ki67_SquMean + ki67_QCD + entropy_mean + entropy_median + entropy_SquMean + entropy_Skewness + entropy_kurt + entropy_QCD + pct_HH + pct_sig + pct_Gsig + iso_mean, 
+                   MH_new + iso_mean , 
+                   ntree = 10000,        # 树的棵树 
+                   nsplit = 3,          # 最小节点数
+                   importance = TRUE,   #变量重要性
+                   tree.err = TRUE,       # 误差
+                   data = data1         # 数据集
+                   )
+
+
+# 2.2 打印模型信息
+print(rfsrc_fit)
+
+# 2.3 绘制树结构
+plot(get.tree(rfsrc_fit,4))
+
+# 2.4 模型结果可视化（误差和变量重要性）
+plot(rfsrc_fit)
+
+```
+```{r}
+
+# 使用拟合的随机森林模型对新数据进行预测
+# 假设新数据存储在 data_new 中
+predictions <- predict(rfsrc_fit, data2)
+
+# 查看预测结果
+print(predictions)
+
+# 将预测结果与原始数据集合并
+data2_with_predictions <- cbind(data2, predictions)
+
+```
+
+## 3、绘制生存曲线
+
+```{r}
+# 绘制前5个样本的生存曲线
+matplot(rfsrc_fit$time.interest,
+        100*t(rfsrc_fit$survival.oob[1:5,]),
+        xlab = "time",
+        ylab = "Survival",
+        type="l",lty=1,
+        lwd=2)
+
+# 也可以采用如下方法绘制
+plot.survival(rfsrc_fit,subset=1:5)
+```
+
+## 4、采用KM法和rfsrc法计算Brier score 并绘图
+
+```{r}
+# 4.1 计算Brier score
+
+# km法
+bs_km <- get.brier.survival(rfsrc_fit, 
+                            cens.model = "km")$brier.score
+head(bs_km)
+
+# rfsrc 法
+bs_rsf <- get.brier.survival(rfsrc_fit, 
+                             cens.model = "rfsrc")$brier.score
+head(bs_rsf)
+
+# 4.2 绘制Brier score 随时间变化的曲线
+
+plot(bs_km,type="s",col=2,lwd=3)
+lines(bs_rsf,type = "s",col=4,lwd=3)
+legend("topright",
+       legend = c("cens.model"="km",
+                  "cens.moedl"="rfs"),
+       fill = c(2,4))
+
+```
+
+
+## 5、优化节点参数
+
+```{r}
+#o <- tune(Surv(OS_months, OS_status) ~ MH + HS_ki67 + AS_ki67 + HeS_ki67 + CV + SD + SquMean + Skewness + kurt + IQR + QCD + auto_ki67 + manual_ki67 + Ki67_2, data)
+#o$optimal
+```
+
+```{r}
+#tune.nodesize(Surv(OS_months, OS_status) ~ MH + HS_ki67 + AS_ki67 + HeS_ki67 + CV + SD + SquMean + Skewness + kurt + IQR + QCD + auto_ki67 + manual_ki67 + Ki67_2, data)
+```
+
+优化后的最佳节点数为3。
+
+## 6、变量重要性
+
+```{r}
+vipm_obj <- subsample(rfsrc_fit)
+plot(vipm_obj)
+```
+
+
+## 7、绘制部分依赖图（PDP）
+
+7.1 age对死亡率的影响
+
+```{r}
+
+partial_obj <- partial(rfsrc_fit,
+                       partial.xvar = "age",
+                       partial.type = "mort",
+                       partial.values = rfsrc_fit$xvar$age,
+                       partial.time = rfsrc_fit$time.interest)
+# 提取数据
+pdta <- get.partial.plot.data(partial_obj)
+     
+# 绘图
+plot(lowess(pdta$x, pdta$yhat, f = 1/3),
+     type = "l", xlab = "age", ylab = "adjusted mortality")
+```
+
+7.2 karno变量对生存的影响
+
+```{r}
+karno <- quantile(rfsrc_fit$xvar$karno)
+partial.obj <- partial(rfsrc_fit,
+partial.type = "surv",
+partial.xvar = "karno",
+partial.values = karno,
+partial.time = rfsrc_fit$time.interest)
+pdta <- get.partial.plot.data(partial.obj)
+     
+## plot partial effect of karnofsky on survival
+matplot(pdta$partial.time, t(pdta$yhat), type = "l", lty = 1,
+        xlab = "time", ylab = "karnofsky adjusted survival")
+legend("topright", 
+        legend = paste0("karnofsky = ", karno), fill = 1:5)
+```

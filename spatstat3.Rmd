@@ -1,0 +1,207 @@
+---
+title: "spatstat"
+author: "Haiyu Gong"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(spatstat)
+
+calculate_ripley_stats <- function(slide_name) {
+    # 定义计算面积的函数
+    cal_area <- function(K) {
+        # 计算两个函数之间的差异
+        diff_theo <- K$theo
+        diff_iso <- K$iso - K$theo
+        diff_border <- K$border - K$theo
+        diff_trans <- K$trans - K$theo
+
+        # 使用梯形法则进行积分
+        area_theo <- sum(diff(K$r) * (diff_theo[-1] + diff_theo[-length(diff_theo)]) / 2)
+        area_iso <- sum(diff(K$r) * (diff_iso[-1] + diff_iso[-length(diff_iso)]) / 2)
+        area_border <- sum(diff(K$r) * (diff_border[-1] + diff_border[-length(diff_border)]) / 2)
+        area_trans <- sum(diff(K$r) * (diff_trans[-1] + diff_trans[-length(diff_trans)]) / 2)
+
+        return(c(area_iso/area_theo, area_trans/area_theo, area_border/area_theo))
+    }
+
+    # 初始化向量，用于存储每次循环计算的结果
+    result_mean <- numeric(3)
+    result_var <- numeric(3)
+
+    # 循环迭代0到9
+    for (i in 0:9) {
+        # 构造文件名
+        file_name <- paste0(slide_name, "_", i, "_points.csv")
+        
+        # 检查文件是否存在
+        if (!file.exists(paste0("F:/result/hotspots/", file_name))) {
+            print(paste("File", file_name, "not found. Exiting loop."))
+            # 终止循环
+            break
+        }
+        # 读取数据
+        data <- read.csv(paste0("F:/result/hotspots/", file_name))
+        
+        # 创建 ppp 对象
+        x <- ppp(data$x, data$y, marks = as.factor(data$label), window = owin(c(0, 768), c(0, 768)))
+        # 计算 Ripley's K 函数
+        K <- Kcross(x, 1, 2)
+        # 计算面积
+        areas <- cal_area(K)
+        # 累加结果
+        result_mean <- result_mean + areas
+        result_var <- result_var + areas^2
+    }
+
+    # 计算均值
+    result_mean <- result_mean / (i + 1)
+
+    # 计算方差
+    result_var <- result_var / (i + 1) - result_mean^2
+
+    return(list(mean = result_mean, var = result_var))
+}
+
+# 调用函数并打印结果
+slide_name <- "HI17-16184.ndpi"
+result <- calculate_ripley_stats(slide_name)
+print("均值：")
+print(result$mean)
+print("方差：")
+print(result$var)
+
+```
+
+```{r}
+library(survival)
+library(survminer)
+library("readxl")
+library(ggplot2)
+# path <- "C:\\Users\\GongHaiyu\\OneDrive\\病理\\tableData\\resultTable_0509f1v4.xlsx"
+path <- "D:\\Code_Repository\\PathoNet-PyTorch3\\tableData\\baseline6v2.xlsx"
+data1 <- read_excel(path, sheet = "FUSCC")
+data2 <- read_excel(path, sheet = "Training")
+data3 <- read_excel(path, sheet = "InternalValid")
+data4 <- read_excel(path, sheet = "External")
+data5 <- read_excel(path, sheet = "G1G2")
+
+#ids_to_remove <- c(3, 209, 211)  # 用实际的 ID 值替换这些示例值
+#data1 <- data1[!data1$id %in% ids_to_remove, ]
+#data2 <- data2[!data2$id %in% ids_to_remove, ]
+#data3 <- data3[!data3$id %in% ids_to_remove, ]
+#data4 <- data4[!data4$id %in% ids_to_remove, ]
+```
+
+```{r}
+# 遍历 data1 的每一行，并计算 calculate_ripley_stats(slide_name)
+result <- apply(data1, 1, function(row) {
+    slide_name <- row["slide_name"]
+    stats <- calculate_ripley_stats(slide_name)
+    return(c(stats$mean, stats$var))
+})
+
+# 将计算得到的结果添加到 data1 中作为 6 列
+data1 <- cbind(data1, t(result))
+
+```
+
+```{r}
+# 遍历 data1 的每一行，并计算 calculate_ripley_stats(slide_name)
+result <- apply(data2, 1, function(row) {
+    slide_name <- row["slide_name"]
+    stats <- calculate_ripley_stats(slide_name)
+    return(c(stats$mean, stats$var))
+})
+
+# 将计算得到的结果添加到 data1 中作为 6 列
+data2 <- cbind(data2, t(result))
+
+```
+```{r}
+# 遍历 data1 的每一行，并计算 calculate_ripley_stats(slide_name)
+result <- apply(data3, 1, function(row) {
+    slide_name <- row["slide_name"]
+    stats <- calculate_ripley_stats(slide_name)
+    return(c(stats$mean, stats$var))
+})
+
+# 将计算得到的结果添加到 data1 中作为 6 列
+data3 <- cbind(data3, t(result))
+
+```
+```{r}
+
+# 遍历 data4 的每一行，并计算 calculate_ripley_stats(slide_name)
+result <- apply(data4, 1, function(row) {
+    slide_name <- row["slide_name"]
+    stats <- calculate_ripley_stats(slide_name)
+    return(c(stats$mean, stats$var))
+})
+
+# 将计算得到的结果添加到 data4 中作为 6 列
+data4 <- cbind(data4, t(result))
+```
+
+```{r}
+# 更改列名
+colnames(data1)[colnames(data1) == 1] <- "iso_mean"
+colnames(data1)[colnames(data1) == 2] <- "trans_mean"
+colnames(data1)[colnames(data1) == 3] <- "border_mean"
+colnames(data1)[colnames(data1) == 4] <- "iso_std"
+colnames(data1)[colnames(data1) == 5] <- "trans_std"
+colnames(data1)[colnames(data1) == 6] <- "border_std"
+
+colnames(data2)[colnames(data2) == 1] <- "iso_mean"
+colnames(data2)[colnames(data2) == 2] <- "trans_mean"
+colnames(data2)[colnames(data2) == 3] <- "border_mean"
+colnames(data2)[colnames(data2) == 4] <- "iso_std"
+colnames(data2)[colnames(data2) == 5] <- "trans_std"
+colnames(data2)[colnames(data2) == 6] <- "border_std"
+
+colnames(data3)[colnames(data3) == 1] <- "iso_mean"
+colnames(data3)[colnames(data3) == 2] <- "trans_mean"
+colnames(data3)[colnames(data3) == 3] <- "border_mean"
+colnames(data3)[colnames(data3) == 4] <- "iso_std"
+colnames(data3)[colnames(data3) == 5] <- "trans_std"
+colnames(data3)[colnames(data3) == 6] <- "border_std"
+
+
+colnames(data4)[colnames(data4) == 1] <- "iso_mean"
+colnames(data4)[colnames(data4) == 2] <- "trans_mean"
+colnames(data4)[colnames(data4) == 3] <- "border_mean"
+colnames(data4)[colnames(data4) == 4] <- "iso_std"
+colnames(data4)[colnames(data4) == 5] <- "trans_std"
+colnames(data4)[colnames(data4) == 6] <- "border_std"
+
+```
+
+
+
+```{r}
+library(openxlsx)
+path_out <- "D:\\Code_Repository\\PathoNet-PyTorch3\\tableData\\baseline6v3.xlsx"
+# 创建一个 Excel 工作簿
+wb <- createWorkbook()
+
+# 将数据框写入到 Excel 工作簿的不同工作表中
+addWorksheet(wb, "FUSCC")
+writeData(wb, "FUSCC", data1, startCol = 1, startRow = 1)
+addWorksheet(wb, "Training")
+writeData(wb, "Training", data2, startCol = 1, startRow = 1)
+addWorksheet(wb, "InternalValid")
+writeData(wb, "InternalValid", data3, startCol = 1, startRow = 1)
+addWorksheet(wb, "External")
+writeData(wb, "External", data4, startCol = 1, startRow = 1)
+addWorksheet(wb, "G1G2")
+writeData(wb, "G1G2", data5, startCol = 1, startRow = 1)
+
+# 将工作簿保存为 Excel 文件
+saveWorkbook(wb, path_out, overwrite = TRUE)
+
+```
